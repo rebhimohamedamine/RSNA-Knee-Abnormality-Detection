@@ -37,9 +37,12 @@ model:
     enabled: true
     temperature: 2.0
   text_encoder:
-    model_name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # A tiny random-weight HF test model, not the real multilingual encoder --
+    # keeps the smoke test fast and download-light while exercising the same
+    # tokenize -> encode -> mean-pool -> project code path.
+    model_name: "hf-internal-testing/tiny-random-BertModel"
     freeze_backbone: true
-    max_length: 64
+    max_length: 32
 
 loss:
   weights:

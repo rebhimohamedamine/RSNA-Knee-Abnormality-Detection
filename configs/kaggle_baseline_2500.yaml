@@ -1,0 +1,27 @@
+# M1 baseline, real Kaggle data/GPU, LARGER subset than kaggle_baseline.yaml
+# (2500 studies instead of 2000) -- still capped, not the full dataset.
+#
+# There is deliberately no "kaggle_baseline_full.yaml": Kaggle's real
+# /kaggle/working quota is a confirmed hard 19.5 GB, and the full training
+# set (24,371 series) cannot be persistently cached within that at any
+# image resolution reasonable for this task:
+#
+#   256px/24 slices: 142.8 GB   112px/16 slices: 18.2 GB (no headroom left)
+#   160px/20 slices:  46.5 GB    96px/16 slices: 13.4 GB (quality risk)
+#    128px/16 slices:  23.8 GB    80px/12 slices:  7.0 GB (quality risk)
+#
+# This is a hard ceiling of the current "cache every series permanently"
+# design, not something a smaller image_size alone fixes without giving up
+# real image detail. See README.md "Running on Kaggle" for the actual
+# options to eventually cover the full dataset (stay capped / bounded cache
+# eviction / no persistent cache) -- pick one deliberately rather than
+# raising max_studies here until disk is actually verified to hold it.
+#
+# For now this is just a bigger (but still safely-bounded) subset than
+# kaggle_baseline.yaml: max_studies=2500 at 128px/16 slices -> ~13,750
+# series (~5.5 series/study avg) -> ~13.4 GB cache -> ~6 GB headroom.
+_base_: kaggle_baseline.yaml
+run_name: "kaggle_m1_baseline_2500"
+
+data:
+  max_studies: 2500

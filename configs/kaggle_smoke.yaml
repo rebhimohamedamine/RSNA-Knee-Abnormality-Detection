@@ -3,6 +3,13 @@
 # the whole pipeline (DICOM decode -> cache -> train -> evaluate -> predict)
 # works against the real competition data before committing to a full run.
 # Expected runtime: a few minutes on a T4.
+#
+# Kaggle's actual /kaggle/working quota is a hard 19.5 GB (confirmed on real
+# hardware) -- image_size/max_slices are overridden below (matching
+# kaggle_baseline.yaml) instead of inheriting base.yaml's 256px/24-slice
+# default, which would cost ~5.2 GB for just this 150-study sanity check
+# (27% of the whole quota for a step that's only meant to prove the
+# pipeline runs, not to produce a good model).
 _base_: baseline.yaml
 run_name: "kaggle_smoke"
 device: "cuda"
@@ -20,7 +27,9 @@ paths:
   output_root: "/kaggle/working/outputs"
 
 data:
-  max_studies: 150   # ~800 series at the dataset's ~5.5 series/study average
+  image_size: 128
+  max_slices: 16
+  max_studies: 150   # ~800 series at the dataset's ~5.5 series/study average -> ~0.9 GB cache
   num_workers: 2
 
 train:

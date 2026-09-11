@@ -121,42 +121,59 @@ if not os.path.exists('/kaggle/working/RSNA-Knee-Abnormality-Detection'):
 ```
 
 The `--checkpoint` path must always be `<checkpoint_root>/<run_name>/best.pt`
-for whichever config you actually ran — e.g. `configs/kaggle_baseline_full.yaml`
-(`run_name: kaggle_m1_baseline_full`) writes to
-`/kaggle/working/checkpoints/kaggle_m1_baseline_full/best.pt`, not
+for whichever config you actually ran — e.g. `configs/kaggle_baseline_2500.yaml`
+(`run_name: kaggle_m1_baseline_2500`) writes to
+`/kaggle/working/checkpoints/kaggle_m1_baseline_2500/best.pt`, not
 `.../kaggle_m1_baseline/best.pt`. It's a plain path passed straight to
 `torch.load`, not resolved against the config, so a mismatched or relative
 path fails with a `FileNotFoundError` rather than finding the right file —
 always use the full `/kaggle/working/...` path to avoid that.
 
-`configs/kaggle_smoke.yaml` / `kaggle_baseline.yaml` / `kaggle_final.yaml`
-point `paths.*` at the real Kaggle mount (`/kaggle/input/competitions/rsna-knee-abnormality-detection/...`)
-and `/kaggle/working/{cache,checkpoints,outputs}`, and set `data.max_studies`
-to a deterministic subset (see `src/data/dataset.py::_subsample_studies`) so
+`configs/kaggle_smoke.yaml` / `kaggle_baseline.yaml` / `kaggle_baseline_2500.yaml`
+/ `kaggle_final.yaml` point `paths.*` at the real Kaggle mount
+(`/kaggle/input/competitions/rsna-knee-abnormality-detection/...`) and
+`/kaggle/working/{cache,checkpoints,outputs}`, and set `data.max_studies` to
+a deterministic subset (see `src/data/dataset.py::_subsample_studies`) so
 you're never forced to run against all 24,371 series just to validate the
-pipeline. `configs/kaggle_baseline_full.yaml` is the uncapped (`max_studies:
-null`), full-training-set version of `kaggle_baseline.yaml` — move to it only
-after the capped config has run cleanly.
+pipeline.
 
-**Disk**: the series-tensor cache is `~series_count * max_slices * image_size²
-* 4 bytes`. Caching every series in the full training set at the spec's
-default `image_size: 256` (~153 GB) will not fit a standard Kaggle instance;
-`kaggle_baseline.yaml`/`kaggle_final.yaml` use `image_size: 128, max_slices:
-16` (~24 GB full-dataset). A real run against an earlier, larger footprint
-(160px/20 slices, ~46 GB — an in-repo estimate of "~31 GB" for that setting
-was simply arithmetic error, not a real measurement) hit `RuntimeError: ...
-unexpected pos 128 vs 0` / `OSError: No space left on device` partway
-through preprocessing on real Kaggle hardware, so treat any number here as a
-budget estimate to verify, not a guarantee: run `!df -h /kaggle/working`
-before a long preprocessing run. `scripts/preprocess.py` now also checks
-free disk space itself (`check_disk_space`, refuses below ~2 GiB free) and
-aborts with a clear message rather than failing deep inside a worker
-process after wasting significant time, and a single series that fails to
-cache (disk hiccup, corrupt DICOM) is logged and skipped rather than
-aborting the whole run — but it still aborts early if 20 series in a row
-fail, since that's almost always a systemic problem (disk full) rather than
-one bad file. Only `checkpoints/` and `outputs/` (a few MB of weights/JSON/CSV)
-need to survive a "Save Version" — `cache/` is disposable; delete it
+**Disk — a confirmed hard 19.5 GB `/kaggle/working` quota, not a soft
+guideline.** The series-tensor cache costs `~series_count * max_slices *
+image_size² * 4 bytes`. There is deliberately no "run on the literal full
+dataset" config: 24,371 series cannot be persistently cached within 19.5 GB
+at any image resolution reasonable for this task —
+
+| Resolution | Full-dataset cache |
+|---|---|
+| 256px/24 slices (spec default) | ~143 GB |
+| 160px/20 slices (an earlier version of these configs, before a real run hit `OSError: No space left on device` partway through preprocessing) | ~47 GB |
+| 128px/16 slices (`kaggle_baseline.yaml`'s resolution) | ~24 GB |
+| 112px/16 slices | ~18 GB (leaves ~1.5 GB headroom — too tight) |
+| 96px/16 slices | ~13 GB (fits, but a real quality-vs-disk trade-off, not free) |
+
+— so every Kaggle config here stays under a deterministic `data.max_studies`
+cap instead: `kaggle_smoke.yaml` (150 studies, ~0.9 GB), `kaggle_baseline.yaml`
+(2,000 studies, ~11 GB), `kaggle_baseline_2500.yaml` (2,500 studies, ~13 GB) —
+each leaves real headroom for checkpoints/logs/safety margin, not just
+"fits exactly." To eventually train across more (or literally all) of the
+4,407 studies, pick one of these deliberately rather than just raising
+`max_studies` until it breaks again:
+
+1. **Stay capped** (simplest, already working) — a 2,000-2,500-study subset is still a large, representative sample; not every study needs to participate in every run.
+2. **Bounded cache eviction** — extend `src/data/cache.py` with an LRU eviction policy capped at a configured disk budget, so a run can cycle through all 4,407 studies over multiple epochs without ever exceeding disk, at the cost of some cache misses (re-decoding an evicted series) rather than zero.
+3. **No persistent cache for a full-dataset pass** — decode fresh every epoch (zero disk growth), trading disk for a lot of time: at this dataset's observed ~5.2 series/sec (4 workers), one full pass over all 24,371 series is ~78 minutes *per epoch*, repeated every epoch.
+
+None of these are implemented yet — say which one you want if/when you're ready to move past a capped subset.
+
+`scripts/preprocess.py` also checks free disk space itself now
+(`check_disk_space`, refuses below ~2 GiB free) and aborts with a clear
+message rather than failing deep inside a worker process after wasting
+significant time, and a single series that fails to cache (disk hiccup,
+corrupt DICOM) is logged and skipped rather than aborting the whole run —
+but it still aborts early if 20 series in a row fail, since that's almost
+always a systemic problem (disk full) rather than one bad file. Only
+`checkpoints/` and `outputs/` (a few MB of weights/JSON/CSV) need to survive
+a "Save Version" — `cache/` is disposable; delete it
 (`!rm -rf /kaggle/working/cache`) or point `cache_root` elsewhere if you're
 short on space or the output quota.
 

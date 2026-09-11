@@ -83,6 +83,58 @@ def _select_series_rows(series_rows: pd.DataFrame, max_series: int, dicom_root: 
     return result.sort_values("SeriesInstanceUID").reset_index(drop=True)
 
 
+def _resolve_path(research_root: Path, path: str) -> Path:
+    p = Path(path)
+    return p if p.is_absolute() else research_root / p
+
+
+def build_train_val_datasets(cfg: dict, research_root: Path) -> tuple["KneeStudyDataset", "KneeStudyDataset"]:
+    """Reads `paths.train_csv`/`train_series_csv`, applies the study-level
+    split, and returns `(train_dataset, val_dataset)`. Shared by
+    `scripts/train.py` and `scripts/evaluate.py` so the two scripts can never
+    disagree about which studies ended up in which split."""
+    paths = cfg["paths"]
+    studies_df = pd.read_csv(_resolve_path(research_root, paths["train_csv"]))
+    series_df = pd.read_csv(_resolve_path(research_root, paths["train_series_csv"]))
+    train_df, val_df = split_studies(studies_df, cfg["data"]["val_fraction"], cfg["data"]["split_seed"])
+
+    use_report = cfg["model"]["report_weak_supervision"]["enabled"] or cfg["model"]["distillation"]["enabled"]
+    common = dict(
+        series_df=series_df,
+        dicom_root=_resolve_path(research_root, paths["dicom_root_train"]),
+        cache_root=_resolve_path(research_root, paths["cache_root"]),
+        data_cfg=cfg["data"],
+        label_cols=cfg["labels"]["columns"],
+    )
+    train_ds = KneeStudyDataset(train_df, include_report_text=use_report, split="train", **common)
+    val_ds = KneeStudyDataset(val_df, include_report_text=False, split="val", **common)
+    return train_ds, val_ds
+
+
+def build_test_dataset(
+    cfg: dict, research_root: Path, studies_csv: str | Path | None = None, series_csv: str | Path | None = None,
+) -> "KneeStudyDataset":
+    """Reads `paths.test_csv`/`test_series_csv` (or the given overrides, for
+    `scripts/predict.py --input-csv/--series-csv`). The real Kaggle test set
+    carries no ground-truth label columns at all -- any missing label column
+    is injected as all-NaN so the same `KneeStudyDataset` contract (a
+    `labels`/`label_mask` pair) still holds, with `label_mask` correctly all
+    zero rather than the Dataset raising a `KeyError`."""
+    paths = cfg["paths"]
+    studies_df = pd.read_csv(studies_csv if studies_csv is not None else _resolve_path(research_root, paths["test_csv"]))
+    series_df = pd.read_csv(series_csv if series_csv is not None else _resolve_path(research_root, paths["test_series_csv"]))
+    label_cols = cfg["labels"]["columns"]
+    for col in label_cols:
+        if col not in studies_df.columns:
+            studies_df[col] = float("nan")
+    return KneeStudyDataset(
+        studies_df, series_df,
+        _resolve_path(research_root, paths["dicom_root_test"]),
+        _resolve_path(research_root, paths["cache_root"]),
+        cfg["data"], label_cols, include_report_text=False, split="test",
+    )
+
+
 class KneeStudyDataset(Dataset):
     def __init__(
         self,

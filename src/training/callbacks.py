@@ -21,6 +21,7 @@ class CheckpointCallback:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.mode = mode
         self.best_score = -float("inf") if mode == "max" else float("inf")
+        self._has_saved_best = False
 
     def _is_improvement(self, score: float) -> bool:
         return score > self.best_score if self.mode == "max" else score < self.best_score
@@ -35,9 +36,16 @@ class CheckpointCallback:
         }
         torch.save(payload, self.checkpoint_dir / "last.pt")
 
-        improved = self._is_improvement(score)
+        # Always save SOME best.pt after the first call, even if `score`
+        # never beats the initial +-inf sentinel (e.g. validation macro AUC
+        # is persistently NaN/-inf because a small split happened to draw no
+        # labeled studies) -- evaluate.py/predict.py must always have a
+        # checkpoint to load once at least one epoch has run.
+        improved = self._is_improvement(score) or not self._has_saved_best
         if improved:
-            self.best_score = score
+            if self._is_improvement(score):
+                self.best_score = score
+            self._has_saved_best = True
             torch.save(payload, self.checkpoint_dir / "best.pt")
         return improved
 

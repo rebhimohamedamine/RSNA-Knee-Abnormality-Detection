@@ -1,0 +1,34 @@
+# M7 (full architecture) on real Kaggle data/GPU. Only use this once
+# baseline -> M2 -> ... -> M6 have each shown a validation macro-AUC
+# improvement on Kaggle data (spec section 42) -- this config exists so that
+# comparison is a one-flag-at-a-time exercise, not a jump straight to "every
+# component on". See configs/kaggle_baseline.yaml for the disk-budget note;
+# the same math applies here.
+_base_: final.yaml
+run_name: "kaggle_m7_final"
+device: "cuda"
+
+paths:
+  train_csv: "/kaggle/input/rsna-knee-abnormality-detection/train.csv"
+  train_series_csv: "/kaggle/input/rsna-knee-abnormality-detection/train_series.csv"
+  test_csv: "/kaggle/input/rsna-knee-abnormality-detection/test.csv"
+  test_series_csv: "/kaggle/input/rsna-knee-abnormality-detection/test_series.csv"
+  sample_submission_csv: "/kaggle/input/rsna-knee-abnormality-detection/sample_submission.csv"
+  dicom_root_train: "/kaggle/input/rsna-knee-abnormality-detection/train_series"
+  dicom_root_test: "/kaggle/input/rsna-knee-abnormality-detection/test_series"
+  cache_root: "/kaggle/working/cache"
+  checkpoint_root: "/kaggle/working/checkpoints"
+  output_root: "/kaggle/working/outputs"
+
+data:
+  image_size: 160
+  max_slices: 20
+  max_series: 6
+  max_studies: 2000   # remove (set to null) once validated, for a full-data run
+  num_workers: 4
+
+train:
+  batch_size: 12
+  epochs: 20
+  mixed_precision: true
+  early_stopping_patience: 5

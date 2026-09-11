@@ -190,3 +190,23 @@ def test_split_studies_raises_on_duplicate_study_uid():
     studies_df = pd.DataFrame({"StudyInstanceUID": ["a", "b", "a"]})
     with pytest.raises(ValueError, match="Duplicate"):
         split_studies(studies_df, val_fraction=0.2, seed=0)
+
+
+# -- _subsample_studies (data.max_studies) ------------------------------------
+
+def test_subsample_studies_is_deterministic_and_sized():
+    from src.data.dataset import _subsample_studies
+
+    studies_df = pd.DataFrame({"StudyInstanceUID": [f"study-{i}" for i in range(100)]})
+    a = _subsample_studies(studies_df, max_studies=10, seed=42)
+    b = _subsample_studies(studies_df, max_studies=10, seed=42)
+    assert len(a) == 10
+    assert list(a["StudyInstanceUID"]) == list(b["StudyInstanceUID"])
+
+
+def test_subsample_studies_none_or_oversized_is_a_no_op():
+    from src.data.dataset import _subsample_studies
+
+    studies_df = pd.DataFrame({"StudyInstanceUID": [f"study-{i}" for i in range(20)]})
+    assert len(_subsample_studies(studies_df, max_studies=None, seed=0)) == 20
+    assert len(_subsample_studies(studies_df, max_studies=1000, seed=0)) == 20

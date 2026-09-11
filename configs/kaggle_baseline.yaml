@@ -1,0 +1,38 @@
+# M1 baseline on real Kaggle data/GPU.
+#
+# Disk note: the cache is per-series (`cache/<key>/<StudyUID>/<SeriesUID>.pt`)
+# and the full training set has ~24,371 series. At image_size=S and
+# max_slices=K, caching every series costs roughly
+# 24371 * K * S^2 * 4 bytes. This config's S=160/K=20 keeps a FULL-dataset
+# cache to ~31 GB -- comfortable on a standard Kaggle GPU instance, but
+# still worth watching (`!df -h /kaggle/working`) if you raise image_size,
+# max_slices, or unset `data.max_studies`. Start with `max_studies` set to
+# validate on a meaningful chunk before removing the cap for a full run.
+_base_: baseline.yaml
+run_name: "kaggle_m1_baseline"
+device: "cuda"
+
+paths:
+  train_csv: "/kaggle/input/rsna-knee-abnormality-detection/train.csv"
+  train_series_csv: "/kaggle/input/rsna-knee-abnormality-detection/train_series.csv"
+  test_csv: "/kaggle/input/rsna-knee-abnormality-detection/test.csv"
+  test_series_csv: "/kaggle/input/rsna-knee-abnormality-detection/test_series.csv"
+  sample_submission_csv: "/kaggle/input/rsna-knee-abnormality-detection/sample_submission.csv"
+  dicom_root_train: "/kaggle/input/rsna-knee-abnormality-detection/train_series"
+  dicom_root_test: "/kaggle/input/rsna-knee-abnormality-detection/test_series"
+  cache_root: "/kaggle/working/cache"
+  checkpoint_root: "/kaggle/working/checkpoints"
+  output_root: "/kaggle/working/outputs"
+
+data:
+  image_size: 160
+  max_slices: 20
+  max_series: 6
+  max_studies: 2000   # remove (set to null) once this config is validated, for a full-data run
+  num_workers: 4
+
+train:
+  batch_size: 16
+  epochs: 15
+  mixed_precision: true
+  early_stopping_patience: 4

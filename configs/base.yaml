@@ -42,6 +42,9 @@ data:
   val_fraction: 0.2
   split_seed: 42
   num_workers: 2
+  max_studies: null        # set to an int for a fast sanity run on a deterministic subset;
+                            # null (default) = use every study. Applies to train AND test --
+                            # never set this in a config used for the real submission run.
 
 model:
   backbone: "resnet18"

@@ -88,6 +88,18 @@ def _resolve_path(research_root: Path, path: str) -> Path:
     return p if p.is_absolute() else research_root / p
 
 
+def _subsample_studies(studies_df: pd.DataFrame, max_studies: int | None, seed: int) -> pd.DataFrame:
+    """Optional, config-driven (`data.max_studies`) deterministic subsample
+    of the full study list -- for a fast sanity run against real Kaggle data
+    (hundreds of GB, hundreds of thousands of DICOM files) before committing
+    to a full-scale pass. `None`/unset means "use every study", the default."""
+    if not max_studies or len(studies_df) <= max_studies:
+        return studies_df
+    rng = np.random.RandomState(seed)
+    idx = rng.choice(len(studies_df), size=max_studies, replace=False)
+    return studies_df.iloc[np.sort(idx)].reset_index(drop=True)
+
+
 def build_train_val_datasets(cfg: dict, research_root: Path) -> tuple["KneeStudyDataset", "KneeStudyDataset"]:
     """Reads `paths.train_csv`/`train_series_csv`, applies the study-level
     split, and returns `(train_dataset, val_dataset)`. Shared by
@@ -96,6 +108,7 @@ def build_train_val_datasets(cfg: dict, research_root: Path) -> tuple["KneeStudy
     paths = cfg["paths"]
     studies_df = pd.read_csv(_resolve_path(research_root, paths["train_csv"]))
     series_df = pd.read_csv(_resolve_path(research_root, paths["train_series_csv"]))
+    studies_df = _subsample_studies(studies_df, cfg["data"].get("max_studies"), cfg["data"]["split_seed"])
     train_df, val_df = split_studies(studies_df, cfg["data"]["val_fraction"], cfg["data"]["split_seed"])
 
     use_report = cfg["model"]["report_weak_supervision"]["enabled"] or cfg["model"]["distillation"]["enabled"]
@@ -123,6 +136,7 @@ def build_test_dataset(
     paths = cfg["paths"]
     studies_df = pd.read_csv(studies_csv if studies_csv is not None else _resolve_path(research_root, paths["test_csv"]))
     series_df = pd.read_csv(series_csv if series_csv is not None else _resolve_path(research_root, paths["test_series_csv"]))
+    studies_df = _subsample_studies(studies_df, cfg["data"].get("max_studies"), cfg["data"]["split_seed"])
     label_cols = cfg["labels"]["columns"]
     for col in label_cols:
         if col not in studies_df.columns:

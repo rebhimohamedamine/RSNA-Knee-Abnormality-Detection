@@ -85,11 +85,69 @@ separate architectures. See `configs/base.yaml` for the full flag set and
 `outputs/metrics/ablation_table.csv`, read straight off the config flags, so
 this table can be regenerated from saved runs without rerunning anything.
 
+## Running on Kaggle
+
+This is [rsna-knee-abnormality-detection](https://www.kaggle.com/competitions/rsna-knee-abnormality-detection)
+(RSNA, $77,000, ROC-AUC evaluation — matches this repo's primary metric),
+verified via the Kaggle API: it's a **code competition**
+(`is_kernels_submissions_only`) with a max of 5 daily submissions, and its
+real DICOM layout is confirmed to exactly match what `src/data/` already
+assumes: `train_series/<StudyInstanceUID>/<SeriesInstanceUID>/<SOPInstanceUID>.dcm`.
+The train split alone has 4,407 studies / 24,371 series.
+
+Attach the competition to a Kaggle notebook with a GPU, then:
+
+```bash
+!git clone https://github.com/rebhimohamedamine/RSNA-Knee-Abnormality-Detection.git
+%cd RSNA-Knee-Abnormality-Detection
+!pip install -r requirements.txt -q
+
+# 1) Sanity check against real data first: 150 real studies, M1, a few epochs.
+!python scripts/preprocess.py --config configs/kaggle_smoke.yaml --split both
+!python scripts/train.py --config configs/kaggle_smoke.yaml
+!python scripts/evaluate.py --config configs/kaggle_smoke.yaml --checkpoint checkpoints/kaggle_smoke/best.pt
+!python scripts/predict.py --config configs/kaggle_smoke.yaml --checkpoint checkpoints/kaggle_smoke/best.pt --out /kaggle/working/submission.csv
+
+# 2) Once that's green, move to a real run -- baseline first, per the M1..M7 progression.
+!python scripts/preprocess.py --config configs/kaggle_baseline.yaml --split both
+!python scripts/train.py --config configs/kaggle_baseline.yaml
+!python scripts/evaluate.py --config configs/kaggle_baseline.yaml --checkpoint checkpoints/kaggle_m1_baseline/best.pt
+!python scripts/predict.py --config configs/kaggle_baseline.yaml --checkpoint checkpoints/kaggle_m1_baseline/best.pt --out /kaggle/working/submission.csv
+```
+
+`configs/kaggle_smoke.yaml` / `kaggle_baseline.yaml` / `kaggle_final.yaml`
+point `paths.*` at the real Kaggle mount (`/kaggle/input/rsna-knee-abnormality-detection/...`)
+and `/kaggle/working/{cache,checkpoints,outputs}`, and set `data.max_studies`
+to a deterministic subset (see `src/data/dataset.py::_subsample_studies`) so
+you're never forced to run against all 24,371 series just to validate the
+pipeline. Set `data.max_studies: null` for a full-data run once you're ready.
+
+**Disk**: the series-tensor cache is `~series_count * max_slices * image_size²
+* 4 bytes`. Caching every series in the full training set at the default
+`image_size: 256` (~153 GB) will not fit a standard Kaggle instance --
+`kaggle_baseline.yaml`/`kaggle_final.yaml` use `image_size: 160, max_slices: 20`
+instead (~31 GB full-dataset cache). Only `checkpoints/` and `outputs/` (a
+few MB of weights/JSON/CSV) need to survive a "Save Version" — `cache/` is
+disposable; delete it or point `cache_root` elsewhere if you're short on the
+output quota.
+
+**Before your first *real* submission** (not just interactive development),
+check this competition's Code Requirements tab for whether internet access
+is disabled during the scored run — code competitions commonly require it.
+If so, the workflow above (which needs internet for `git clone`/`pip
+install`) is for *training* only: train interactively with internet on,
+save the resulting checkpoint as a Kaggle Dataset, then use a second,
+minimal, internet-off notebook that installs nothing beyond what's
+preinstalled, loads that checkpoint, and runs `scripts/predict.py` to
+produce the graded submission.
+
 ## Known limitations
 
 - Report weak-label synonym/negation coverage is English plus partial
   Spanish/Dutch inferred from the reports actually present in
   `data/train.csv` — not exhaustive multilingual coverage. Unmapped
   languages degrade recall rather than crashing.
-- Not yet run against real DICOM data or on GPU; Kaggle orchestration
-  (`kernel-metadata.json`) is not yet updated for this codebase.
+- Verified against real Kaggle DICOM structure via the Kaggle API (see
+  "Running on Kaggle" above) but not yet actually executed on Kaggle/GPU;
+  `kernel-metadata.json` at the repo root belongs to the separate
+  pre-existing notebook, not this codebase.

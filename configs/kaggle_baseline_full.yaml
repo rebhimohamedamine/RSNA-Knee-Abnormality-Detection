@@ -1,0 +1,15 @@
+# M1 baseline, real Kaggle data/GPU, FULL training set -- no max_studies
+# cap. Only move to this once configs/kaggle_baseline.yaml (the 2000-study
+# subset) has actually run cleanly end to end; this exists as a separate
+# file rather than an edit to kaggle_baseline.yaml so the validated,
+# disk-budgeted subset config stays available/reproducible on its own.
+#
+# Same image_size=160/max_slices=20 disk budget as kaggle_baseline.yaml
+# applies here for real: ~24,371 series * 20 * 160^2 * 4 bytes =~ 31 GB for
+# a full-dataset cache. Watch `!df -h /kaggle/working` during the first
+# preprocess.py run against this config.
+_base_: kaggle_baseline.yaml
+run_name: "kaggle_m1_baseline_full"
+
+data:
+  max_studies: null

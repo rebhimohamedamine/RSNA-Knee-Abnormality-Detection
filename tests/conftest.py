@@ -17,3 +17,8 @@ def research_root() -> Path:
 @pytest.fixture(scope="session")
 def train_csv_path() -> Path:
     return RESEARCH_ROOT / "data" / "train.csv"
+
+
+@pytest.fixture(scope="session")
+def sample_submission_path() -> Path:
+    return RESEARCH_ROOT / "data" / "sample_submission.csv"

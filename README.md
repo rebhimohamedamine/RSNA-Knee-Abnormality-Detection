@@ -116,7 +116,7 @@ Attach the competition to a Kaggle notebook with a GPU, then:
 ```
 
 `configs/kaggle_smoke.yaml` / `kaggle_baseline.yaml` / `kaggle_final.yaml`
-point `paths.*` at the real Kaggle mount (`/kaggle/input/rsna-knee-abnormality-detection/...`)
+point `paths.*` at the real Kaggle mount (`/kaggle/input/competitions/rsna-knee-abnormality-detection/...`)
 and `/kaggle/working/{cache,checkpoints,outputs}`, and set `data.max_studies`
 to a deterministic subset (see `src/data/dataset.py::_subsample_studies`) so
 you're never forced to run against all 24,371 series just to validate the

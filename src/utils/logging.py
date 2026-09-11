@@ -25,7 +25,9 @@ def _configure_root(level: int) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))
     root.addHandler(handler)
-    root.propagate = False
+    # Deliberately leave propagate at its default (True): pytest's `caplog`
+    # captures records via a handler on the root logger, which only sees
+    # records that propagate up from "knee_mri".
     _CONFIGURED = True
 
 

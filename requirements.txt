@@ -1,8 +1,5 @@
-# NOTE: torch/torchvision/timm/transformers/sentence-transformers are floor-pinned (>=), not
-# exact-pinned. Kaggle preinstalls its own CUDA-matched builds of these; a naive
-# `pip install -r requirements.txt` there can clobber the GPU build with a CPU wheel. When
-# orchestrating on Kaggle, install those five with --no-deps or use a trimmed
-# requirements-kaggle.txt (pydicom + pytest only) instead of this file verbatim.
+# Installed directly via `pip install -r requirements.txt` on Kaggle (the actual
+# training/inference GPU environment) as well as locally for development/testing.
 torch>=2.6,<3
 torchvision>=0.21,<1
 timm>=1.0.15,<2

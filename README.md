@@ -8,11 +8,14 @@ MRI + series metadata alone at inference.
 
 ## Status
 
-Local development pass. CPU-only (no CUDA on the dev machine), no real
-Kaggle DICOM data available locally — the whole pipeline is verified against
-small synthetic DICOM series generated in `tests/`. No Kaggle run, no
-training-to-convergence, and no ablation numbers have happened yet; that
-follows once this pass's `pytest -q` is green.
+Training and inference run on Kaggle GPU, per the competition. The local
+machine has no CUDA and no real Kaggle DICOM data, so it's used only for
+writing and unit-testing code (per the spec's local-vs-Kaggle split) — the
+whole pipeline is verified locally against small synthetic DICOM series
+generated in `tests/` before ever touching Kaggle. No Kaggle run, no
+training-to-convergence, and no ablation numbers have happened yet; those
+follow once this pass's `pytest -q` is green and the code is pushed to a
+Kaggle notebook.
 
 ## Targets
 

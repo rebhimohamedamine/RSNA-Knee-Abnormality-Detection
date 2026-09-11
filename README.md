@@ -95,41 +95,70 @@ real DICOM layout is confirmed to exactly match what `src/data/` already
 assumes: `train_series/<StudyInstanceUID>/<SeriesInstanceUID>/<SOPInstanceUID>.dcm`.
 The train split alone has 4,407 studies / 24,371 series.
 
-Attach the competition to a Kaggle notebook with a GPU, then:
+Attach the competition to a Kaggle notebook with a GPU, then (the clone cell
+below is safe to re-run — it won't re-nest into a new subfolder each time,
+which a plain `!git clone` + `%cd` does if you re-run that cell):
 
 ```bash
-!git clone https://github.com/rebhimohamedamine/RSNA-Knee-Abnormality-Detection.git
-%cd RSNA-Knee-Abnormality-Detection
+import os
+if not os.path.exists('/kaggle/working/RSNA-Knee-Abnormality-Detection'):
+    !git clone https://github.com/rebhimohamedamine/RSNA-Knee-Abnormality-Detection.git /kaggle/working/RSNA-Knee-Abnormality-Detection
+%cd /kaggle/working/RSNA-Knee-Abnormality-Detection
+!git pull
 !pip install -r requirements.txt -q
 
 # 1) Sanity check against real data first: 150 real studies, M1, a few epochs.
 !python scripts/preprocess.py --config configs/kaggle_smoke.yaml --split both
 !python scripts/train.py --config configs/kaggle_smoke.yaml
-!python scripts/evaluate.py --config configs/kaggle_smoke.yaml --checkpoint checkpoints/kaggle_smoke/best.pt
-!python scripts/predict.py --config configs/kaggle_smoke.yaml --checkpoint checkpoints/kaggle_smoke/best.pt --out /kaggle/working/submission.csv
+!python scripts/evaluate.py --config configs/kaggle_smoke.yaml --checkpoint /kaggle/working/checkpoints/kaggle_smoke/best.pt
+!python scripts/predict.py --config configs/kaggle_smoke.yaml --checkpoint /kaggle/working/checkpoints/kaggle_smoke/best.pt --out /kaggle/working/submission.csv
 
 # 2) Once that's green, move to a real run -- baseline first, per the M1..M7 progression.
 !python scripts/preprocess.py --config configs/kaggle_baseline.yaml --split both
 !python scripts/train.py --config configs/kaggle_baseline.yaml
-!python scripts/evaluate.py --config configs/kaggle_baseline.yaml --checkpoint checkpoints/kaggle_m1_baseline/best.pt
-!python scripts/predict.py --config configs/kaggle_baseline.yaml --checkpoint checkpoints/kaggle_m1_baseline/best.pt --out /kaggle/working/submission.csv
+!python scripts/evaluate.py --config configs/kaggle_baseline.yaml --checkpoint /kaggle/working/checkpoints/kaggle_m1_baseline/best.pt
+!python scripts/predict.py --config configs/kaggle_baseline.yaml --checkpoint /kaggle/working/checkpoints/kaggle_m1_baseline/best.pt --out /kaggle/working/submission.csv
 ```
+
+The `--checkpoint` path must always be `<checkpoint_root>/<run_name>/best.pt`
+for whichever config you actually ran — e.g. `configs/kaggle_baseline_full.yaml`
+(`run_name: kaggle_m1_baseline_full`) writes to
+`/kaggle/working/checkpoints/kaggle_m1_baseline_full/best.pt`, not
+`.../kaggle_m1_baseline/best.pt`. It's a plain path passed straight to
+`torch.load`, not resolved against the config, so a mismatched or relative
+path fails with a `FileNotFoundError` rather than finding the right file —
+always use the full `/kaggle/working/...` path to avoid that.
 
 `configs/kaggle_smoke.yaml` / `kaggle_baseline.yaml` / `kaggle_final.yaml`
 point `paths.*` at the real Kaggle mount (`/kaggle/input/competitions/rsna-knee-abnormality-detection/...`)
 and `/kaggle/working/{cache,checkpoints,outputs}`, and set `data.max_studies`
 to a deterministic subset (see `src/data/dataset.py::_subsample_studies`) so
 you're never forced to run against all 24,371 series just to validate the
-pipeline. Set `data.max_studies: null` for a full-data run once you're ready.
+pipeline. `configs/kaggle_baseline_full.yaml` is the uncapped (`max_studies:
+null`), full-training-set version of `kaggle_baseline.yaml` — move to it only
+after the capped config has run cleanly.
 
 **Disk**: the series-tensor cache is `~series_count * max_slices * image_size²
-* 4 bytes`. Caching every series in the full training set at the default
-`image_size: 256` (~153 GB) will not fit a standard Kaggle instance --
-`kaggle_baseline.yaml`/`kaggle_final.yaml` use `image_size: 160, max_slices: 20`
-instead (~31 GB full-dataset cache). Only `checkpoints/` and `outputs/` (a
-few MB of weights/JSON/CSV) need to survive a "Save Version" — `cache/` is
-disposable; delete it or point `cache_root` elsewhere if you're short on the
-output quota.
+* 4 bytes`. Caching every series in the full training set at the spec's
+default `image_size: 256` (~153 GB) will not fit a standard Kaggle instance;
+`kaggle_baseline.yaml`/`kaggle_final.yaml` use `image_size: 128, max_slices:
+16` (~24 GB full-dataset). A real run against an earlier, larger footprint
+(160px/20 slices, ~46 GB — an in-repo estimate of "~31 GB" for that setting
+was simply arithmetic error, not a real measurement) hit `RuntimeError: ...
+unexpected pos 128 vs 0` / `OSError: No space left on device` partway
+through preprocessing on real Kaggle hardware, so treat any number here as a
+budget estimate to verify, not a guarantee: run `!df -h /kaggle/working`
+before a long preprocessing run. `scripts/preprocess.py` now also checks
+free disk space itself (`check_disk_space`, refuses below ~2 GiB free) and
+aborts with a clear message rather than failing deep inside a worker
+process after wasting significant time, and a single series that fails to
+cache (disk hiccup, corrupt DICOM) is logged and skipped rather than
+aborting the whole run — but it still aborts early if 20 series in a row
+fail, since that's almost always a systemic problem (disk full) rather than
+one bad file. Only `checkpoints/` and `outputs/` (a few MB of weights/JSON/CSV)
+need to survive a "Save Version" — `cache/` is disposable; delete it
+(`!rm -rf /kaggle/working/cache`) or point `cache_root` elsewhere if you're
+short on space or the output quota.
 
 **Before your first *real* submission** (not just interactive development),
 check this competition's Code Requirements tab for whether internet access

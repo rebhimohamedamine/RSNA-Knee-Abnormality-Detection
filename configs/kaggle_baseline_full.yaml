@@ -4,10 +4,14 @@
 # file rather than an edit to kaggle_baseline.yaml so the validated,
 # disk-budgeted subset config stays available/reproducible on its own.
 #
-# Same image_size=160/max_slices=20 disk budget as kaggle_baseline.yaml
-# applies here for real: ~24,371 series * 20 * 160^2 * 4 bytes =~ 31 GB for
-# a full-dataset cache. Watch `!df -h /kaggle/working` during the first
-# preprocess.py run against this config.
+# Same image_size=128/max_slices=16 disk budget as kaggle_baseline.yaml
+# applies here for real: ~24,371 series * 16 * 128^2 * 4 bytes =~ 24 GB for
+# a full-dataset cache. preprocess.py now checks free disk space itself and
+# aborts early if it's running low, but confirm real headroom with
+# `!df -h /kaggle/working` before a long run regardless -- a previous run
+# against a larger (160/20) footprint hit "No space left on device" partway
+# through, so this number is a budget estimate, not a guarantee for your
+# specific instance.
 _base_: kaggle_baseline.yaml
 run_name: "kaggle_m1_baseline_full"
 

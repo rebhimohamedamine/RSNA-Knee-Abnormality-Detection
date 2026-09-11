@@ -21,8 +21,8 @@ paths:
   output_root: "/kaggle/working/outputs"
 
 data:
-  image_size: 160
-  max_slices: 20
+  image_size: 128
+  max_slices: 16
   max_series: 6
   max_studies: 2000   # remove (set to null) once validated, for a full-data run
   num_workers: 4

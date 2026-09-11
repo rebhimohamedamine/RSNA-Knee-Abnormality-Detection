@@ -2,12 +2,17 @@
 #
 # Disk note: the cache is per-series (`cache/<key>/<StudyUID>/<SeriesUID>.pt`)
 # and the full training set has ~24,371 series. At image_size=S and
-# max_slices=K, caching every series costs roughly
-# 24371 * K * S^2 * 4 bytes. This config's S=160/K=20 keeps a FULL-dataset
-# cache to ~31 GB -- comfortable on a standard Kaggle GPU instance, but
-# still worth watching (`!df -h /kaggle/working`) if you raise image_size,
-# max_slices, or unset `data.max_studies`. Start with `max_studies` set to
-# validate on a meaningful chunk before removing the cap for a full run.
+# max_slices=K, caching every series costs roughly S^2 * K * 4 bytes, so a
+# FULL-dataset cache costs 24371 * that. This config's S=128/K=16 is
+# ~1.0 MB/series -> ~24 GB full-dataset (an EARLIER version of this file
+# used S=160/K=20, documented here as "~31 GB" -- that arithmetic was
+# wrong, the real figure is ~46 GB, and a real Kaggle run hit
+# "No space left on device" partway through preprocessing at that setting).
+# scripts/preprocess.py now also checks free disk space itself and aborts
+# with a clear error well before actually filling the disk (see
+# `check_disk_space` / `MIN_FREE_BYTES`), but don't rely on that alone --
+# confirm real headroom with `!df -h /kaggle/working` before a long run,
+# and prefer keeping `data.max_studies` set until you have.
 _base_: baseline.yaml
 run_name: "kaggle_m1_baseline"
 device: "cuda"
@@ -25,8 +30,8 @@ paths:
   output_root: "/kaggle/working/outputs"
 
 data:
-  image_size: 160
-  max_slices: 20
+  image_size: 128
+  max_slices: 16
   max_series: 6
   max_studies: 2000   # remove (set to null) once this config is validated, for a full-data run
   num_workers: 4

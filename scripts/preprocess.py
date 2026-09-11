@@ -16,6 +16,7 @@ RESEARCH_ROOT = Path(__file__).resolve().parent.parent
 if str(RESEARCH_ROOT) not in sys.path:
     sys.path.insert(0, str(RESEARCH_ROOT))  # so `python scripts/preprocess.py` finds src/ regardless of cwd
 
+import shutil
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
@@ -31,26 +32,55 @@ from src.utils.logging import get_logger
 
 logger = get_logger("scripts.preprocess")
 
+MIN_FREE_BYTES = 2 * 1024**3       # refuse to keep writing cache below this much free disk
+MAX_CONSECUTIVE_ERRORS = 20        # abort early rather than grinding through thousands of doomed writes
+
 
 def resolve_path(research_root: Path, path: str) -> Path:
     p = Path(path)
     return p if p.is_absolute() else research_root / p
 
 
-def _process_one_series(task: tuple[str, str, Path, SeriesMetadata, dict, Path]) -> bool:
-    """Builds/caches one series' tensor. Runs directly (num_workers=0) or in
-    a worker process (num_workers>0, via ProcessPoolExecutor below) -- must
+def check_disk_space(path: Path, min_free_bytes: int = MIN_FREE_BYTES) -> None:
+    """Raises a clear, actionable error if `path`'s filesystem is nearly
+    full, instead of letting `torch.save` fail deep inside a worker process
+    with an opaque `RuntimeError: unexpected pos ... vs 0` -- which is what
+    a genuinely full disk looks like, and which otherwise only surfaces
+    after minutes-to-hours of wasted work."""
+    path.mkdir(parents=True, exist_ok=True)
+    free = shutil.disk_usage(path).free
+    if free < min_free_bytes:
+        raise RuntimeError(
+            f"Only {free / 1024**3:.1f} GiB free at {path} (need at least "
+            f"{min_free_bytes / 1024**3:.0f} GiB headroom to keep writing cache safely). "
+            f"Reduce data.max_studies / data.image_size / data.max_slices, or clear the "
+            f"existing cache (`rm -rf {path}`), then retry. Check real free space with "
+            f"`!df -h {path}` before picking new numbers -- don't just guess."
+        )
+
+
+def _process_one_series(task: tuple[str, str, Path, SeriesMetadata, dict, Path]) -> tuple[bool, str | None]:
+    """Builds/caches one series' tensor. Runs directly (num_workers<=1) or in
+    a worker process (num_workers>1, via ProcessPoolExecutor below) -- must
     therefore be a plain module-level function, not a closure, so it can be
-    pickled across the process boundary. Returns False (and does nothing)
-    if the DICOM directory doesn't exist on disk."""
+    pickled across the process boundary.
+
+    Returns `(processed, error)`: `(False, None)` if the DICOM directory
+    doesn't exist (expected/benign); `(False, "...")` if it existed but
+    something raised while processing it (e.g. disk full, a corrupt DICOM
+    file) -- callers log these and keep going rather than letting one bad
+    series abort an hours-long run; `(True, None)` on success."""
     study_uid, series_uid, series_dir, metadata, data_cfg, cache_root = task
     if not series_dir.exists():
-        return False
-    get_or_build_series_tensor(
-        study_uid=study_uid, series_uid=series_uid, series_dir=series_dir,
-        metadata=metadata, data_cfg=data_cfg, cache_root=cache_root,
-    )
-    return True
+        return False, None
+    try:
+        get_or_build_series_tensor(
+            study_uid=study_uid, series_uid=series_uid, series_dir=series_dir,
+            metadata=metadata, data_cfg=data_cfg, cache_root=cache_root,
+        )
+        return True, None
+    except Exception as exc:  # noqa: BLE001 -- deliberately broad: log and move on, never abort the whole run on one series
+        return False, f"{study_uid}/{series_uid}: {exc!r}"
 
 
 def _precompute_weak_labels(studies_df: pd.DataFrame, cache_root: Path) -> None:
@@ -94,9 +124,12 @@ def preprocess_split(cfg: dict, split: str, research_root: Path = RESEARCH_ROOT)
         series_df = series_df[series_df["StudyInstanceUID"].isin(set(studies_df["StudyInstanceUID"]))].reset_index(drop=True)
 
     num_workers = int(data_cfg.get("num_workers", 0) or 0)
+    check_disk_space(cache_root)
     logger.info(
-        "Preprocessing %d series (%s split, max_studies=%s) into cache at %s using %d worker process(es)",
+        "Preprocessing %d series (%s split, max_studies=%s) into cache at %s using %d worker process(es); "
+        "%.1f GiB free at start.",
         len(series_df), split, data_cfg.get("max_studies"), cache_root, num_workers,
+        shutil.disk_usage(cache_root).free / 1024**3,
     )
 
     tasks = []
@@ -106,18 +139,42 @@ def preprocess_split(cfg: dict, split: str, research_root: Path = RESEARCH_ROOT)
         tasks.append((metadata.study_instance_uid, metadata.series_instance_uid, series_dir, metadata, data_cfg, cache_root))
 
     n_missing_dirs = 0
+    n_errors = 0
+    consecutive_errors = 0
+    error_examples: list[str] = []
+    DISK_CHECK_EVERY = 200
+
+    def _handle_result(i: int, processed: bool, error: str | None) -> None:
+        nonlocal n_missing_dirs, n_errors, consecutive_errors
+        if error is not None:
+            n_errors += 1
+            consecutive_errors += 1
+            if len(error_examples) < 5:
+                error_examples.append(error)
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                raise RuntimeError(
+                    f"{consecutive_errors} series in a row failed to cache (most recent: {error}). "
+                    f"Stopping early rather than repeating a likely-systemic failure (disk full is the "
+                    f"most common cause -- check `!df -h {cache_root}`) across the remaining series."
+                )
+        else:
+            consecutive_errors = 0
+            if not processed:
+                n_missing_dirs += 1
+        if i % DISK_CHECK_EVERY == 0:
+            check_disk_space(cache_root)
+
     if num_workers > 1:
         # DICOM decode + resize is CPU/IO-bound (no GPU involved at all), and
         # each series is independent, so this parallelizes cleanly across
         # processes -- a real wall-clock win on Kaggle's multi-core CPU.
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            for processed in tqdm(executor.map(_process_one_series, tasks, chunksize=4), total=len(tasks), desc=f"preprocess:{split}"):
-                if not processed:
-                    n_missing_dirs += 1
+            for i, (processed, error) in enumerate(tqdm(executor.map(_process_one_series, tasks, chunksize=4), total=len(tasks), desc=f"preprocess:{split}")):
+                _handle_result(i, processed, error)
     else:
-        for task in tqdm(tasks, desc=f"preprocess:{split}"):
-            if not _process_one_series(task):
-                n_missing_dirs += 1
+        for i, task in enumerate(tqdm(tasks, desc=f"preprocess:{split}")):
+            processed, error = _process_one_series(task)
+            _handle_result(i, processed, error)
 
     if n_missing_dirs:
         logger.warning(
@@ -125,6 +182,8 @@ def preprocess_split(cfg: dict, split: str, research_root: Path = RESEARCH_ROOT)
             "(expected if only the CSV stub is available locally; run on Kaggle for the real data).",
             n_missing_dirs, len(series_df), dicom_root,
         )
+    if n_errors:
+        logger.warning("%d/%d series raised an error while caching (examples: %s).", n_errors, len(series_df), error_examples)
 
     if split == "train":
         if "Report" in studies_df.columns:

@@ -16,11 +16,14 @@ RESEARCH_ROOT = Path(__file__).resolve().parent.parent
 if str(RESEARCH_ROOT) not in sys.path:
     sys.path.insert(0, str(RESEARCH_ROOT))  # so `python scripts/preprocess.py` finds src/ regardless of cwd
 
+from concurrent.futures import ProcessPoolExecutor
+
 import pandas as pd
 from tqdm import tqdm
 
 from src.data.cache import get_or_build_series_tensor
-from src.data.series import load_series_metadata
+from src.data.dataset import _subsample_studies
+from src.data.series import SeriesMetadata, load_series_metadata
 from src.reports.label_mapping import TARGETS
 from src.reports.weak_labels import extract_weak_labels
 from src.utils.config import load_config
@@ -34,8 +37,23 @@ def resolve_path(research_root: Path, path: str) -> Path:
     return p if p.is_absolute() else research_root / p
 
 
-def _precompute_weak_labels(studies_csv: Path, cache_root: Path) -> None:
-    studies_df = pd.read_csv(studies_csv, usecols=["StudyInstanceUID", "Report"])
+def _process_one_series(task: tuple[str, str, Path, SeriesMetadata, dict, Path]) -> bool:
+    """Builds/caches one series' tensor. Runs directly (num_workers=0) or in
+    a worker process (num_workers>0, via ProcessPoolExecutor below) -- must
+    therefore be a plain module-level function, not a closure, so it can be
+    pickled across the process boundary. Returns False (and does nothing)
+    if the DICOM directory doesn't exist on disk."""
+    study_uid, series_uid, series_dir, metadata, data_cfg, cache_root = task
+    if not series_dir.exists():
+        return False
+    get_or_build_series_tensor(
+        study_uid=study_uid, series_uid=series_uid, series_dir=series_dir,
+        metadata=metadata, data_cfg=data_cfg, cache_root=cache_root,
+    )
+    return True
+
+
+def _precompute_weak_labels(studies_df: pd.DataFrame, cache_root: Path) -> None:
     records = []
     for row in tqdm(studies_df.to_dict("records"), desc="weak-labels"):
         labels, confidence = extract_weak_labels(row.get("Report"))
@@ -63,20 +81,43 @@ def preprocess_split(cfg: dict, split: str, research_root: Path = RESEARCH_ROOT)
     cache_root = resolve_path(research_root, paths["cache_root"])
     data_cfg = cfg["data"]
 
+    # Apply the SAME data.max_studies subsample that build_train_val_datasets/
+    # build_test_dataset (used by train.py/evaluate.py/predict.py) apply --
+    # otherwise this warms the cache for every series in the whole CSV
+    # (24,371 for the real training set) regardless of the config's intended
+    # subset, which is both pointless work and why a "smoke" config could
+    # still take hours.
+    studies_df = pd.read_csv(studies_csv)
+    studies_df = _subsample_studies(studies_df, data_cfg.get("max_studies"), data_cfg["split_seed"])
     series_df = pd.read_csv(series_csv)
-    logger.info("Preprocessing %d series (%s split) into cache at %s", len(series_df), split, cache_root)
+    if data_cfg.get("max_studies"):
+        series_df = series_df[series_df["StudyInstanceUID"].isin(set(studies_df["StudyInstanceUID"]))].reset_index(drop=True)
 
-    n_missing_dirs = 0
-    for row in tqdm(series_df.to_dict("records"), desc=f"preprocess:{split}"):
+    num_workers = int(data_cfg.get("num_workers", 0) or 0)
+    logger.info(
+        "Preprocessing %d series (%s split, max_studies=%s) into cache at %s using %d worker process(es)",
+        len(series_df), split, data_cfg.get("max_studies"), cache_root, num_workers,
+    )
+
+    tasks = []
+    for row in series_df.to_dict("records"):
         metadata = load_series_metadata(pd.Series(row))
         series_dir = dicom_root / metadata.study_instance_uid / metadata.series_instance_uid
-        if not series_dir.exists():
-            n_missing_dirs += 1
-            continue
-        get_or_build_series_tensor(
-            study_uid=metadata.study_instance_uid, series_uid=metadata.series_instance_uid,
-            series_dir=series_dir, metadata=metadata, data_cfg=data_cfg, cache_root=cache_root,
-        )
+        tasks.append((metadata.study_instance_uid, metadata.series_instance_uid, series_dir, metadata, data_cfg, cache_root))
+
+    n_missing_dirs = 0
+    if num_workers > 1:
+        # DICOM decode + resize is CPU/IO-bound (no GPU involved at all), and
+        # each series is independent, so this parallelizes cleanly across
+        # processes -- a real wall-clock win on Kaggle's multi-core CPU.
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            for processed in tqdm(executor.map(_process_one_series, tasks, chunksize=4), total=len(tasks), desc=f"preprocess:{split}"):
+                if not processed:
+                    n_missing_dirs += 1
+    else:
+        for task in tqdm(tasks, desc=f"preprocess:{split}"):
+            if not _process_one_series(task):
+                n_missing_dirs += 1
 
     if n_missing_dirs:
         logger.warning(
@@ -86,9 +127,8 @@ def preprocess_split(cfg: dict, split: str, research_root: Path = RESEARCH_ROOT)
         )
 
     if split == "train":
-        header = pd.read_csv(studies_csv, nrows=0)
-        if "Report" in header.columns:
-            _precompute_weak_labels(studies_csv, cache_root)
+        if "Report" in studies_df.columns:
+            _precompute_weak_labels(studies_df[["StudyInstanceUID", "Report"]], cache_root)
         else:
             logger.info("No Report column in %s -- skipping weak-label precomputation.", studies_csv)
 

@@ -1,0 +1,41 @@
+{
+  "id": "prvsiyan/rsna-knee-read-the-report-then-the-knee",
+  "id_no": 129913517,
+  "title": "RSNA Knee: read the report, then the knee",
+  "code_file": "rsna-knee-read-the-report-then-the-knee.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "keywords": [],
+  "dataset_sources": [
+    "",
+    "",
+    "",
+    "",
+    "marwanmath/resnet-50-radimagenet-marwan",
+    "stevenleehans/rsna-knee-llm-report-labels",
+    "lixin73/rsna-knee-llm-report-labels-sol56",
+    "pilkwang/rsna-knee-llm-labels",
+    "pilkwang/rsna-knee-weights",
+    "royceplayz/rsna-medicalnet-resnet50-weights",
+    "tonylica/rsna2026-models"
+  ],
+  "kernel_sources": [
+    "gourabroy553/rsna-knee-hybrid-dino-radiomics",
+    "blacklions/report-teacher-anatomy-aware-hierarchical-multimod"
+  ],
+  "competition_sources": [
+    "rsna-knee-abnormality-detection"
+  ],
+  "model_sources": [
+    "mrquadian/biomedclip/PyTorch/default/1",
+    "metaresearch/dinov2/PyTorch/small/1",
+    "metaresearch/dinov2/PyTorch/base/1",
+    "timm/tf-efficientnet/PyTorch/tf-efficientnet-b3/1"
+  ],
+  "docker_image": "gcr.io/kaggle-private-byod/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461",
+  "machine_shape": "None"
+}

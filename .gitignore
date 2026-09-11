@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+.vscode/
+.idea/
+
+# Preprocessed cache, checkpoints, and run outputs are regenerated, not tracked
+cache/*
+!cache/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+outputs/*
+!outputs/predictions/.gitkeep
+!outputs/metrics/.gitkeep
+!outputs/logs/.gitkeep
+
+# Real DICOM imaging data lives only on Kaggle -- never commit it
+data/train_series/
+data/test_series/
+*.dcm

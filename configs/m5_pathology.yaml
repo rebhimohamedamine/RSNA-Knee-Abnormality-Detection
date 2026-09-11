@@ -1,0 +1,13 @@
+# M5 -- adds the six pathology-group adapters (Ligament, Meniscus, OA,
+# Inflammation, Cyst, Bone) on top of M4.
+_base_: base.yaml
+run_name: "m5_pathology"
+model:
+  slice_attention:
+    enabled: true
+  metadata:
+    enabled: true
+  cross_series_attention:
+    enabled: true
+  pathology_attention:
+    enabled: true

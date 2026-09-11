@@ -1,0 +1,10 @@
+# M4 -- adds the masked cross-series transformer on top of M3.
+_base_: base.yaml
+run_name: "m4_cross_series"
+model:
+  slice_attention:
+    enabled: true
+  metadata:
+    enabled: true
+  cross_series_attention:
+    enabled: true

@@ -1,0 +1,20 @@
+# M6 -- adds report-derived weak-label supervision (auxiliary training loss
+# only; the report branch is never used at inference) on top of M5.
+_base_: base.yaml
+run_name: "m6_report_weak"
+model:
+  slice_attention:
+    enabled: true
+  metadata:
+    enabled: true
+  cross_series_attention:
+    enabled: true
+  pathology_attention:
+    enabled: true
+  report_weak_supervision:
+    enabled: true
+loss:
+  weights:
+    bce: 1.0
+    report_weak: 0.2
+    distillation: 0.0

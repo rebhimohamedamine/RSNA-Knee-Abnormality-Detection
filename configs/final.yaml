@@ -1,0 +1,28 @@
+# M7 -- full model: every architectural flag on, plus report-teacher
+# distillation and pos_weight class-imbalance handling. Only include this
+# configuration in a real run once each M1->M6 step has shown a validation
+# macro-AUC improvement over the previous one -- complexity alone is not
+# justification (spec section 42).
+_base_: base.yaml
+run_name: "m7_final"
+model:
+  pretrained: true
+  slice_attention:
+    enabled: true
+  metadata:
+    enabled: true
+  cross_series_attention:
+    enabled: true
+  pathology_attention:
+    enabled: true
+  report_weak_supervision:
+    enabled: true
+  distillation:
+    enabled: true
+    temperature: 2.0
+loss:
+  class_imbalance_strategy: "pos_weight"
+  weights:
+    bce: 1.0
+    report_weak: 0.3
+    distillation: 0.2

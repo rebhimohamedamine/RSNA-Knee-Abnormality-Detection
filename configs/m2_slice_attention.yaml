@@ -1,0 +1,6 @@
+# M2 -- adds learnable masked slice attention in place of masked-mean pooling.
+_base_: base.yaml
+run_name: "m2_slice_attention"
+model:
+  slice_attention:
+    enabled: true

@@ -1,0 +1,54 @@
+# Local dev / CI smoke test. Deliberately turns on EVERY architectural flag
+# (the full M7 graph, not just M1) with tiny dimensions, so a green run here
+# is a real proof that the whole pipeline works end-to-end on CPU, not just
+# the simplest path through it. Used by tests/test_end_to_end_smoke.py.
+_base_: base.yaml
+run_name: "cpu_smoke"
+device: "cpu"
+
+data:
+  image_size: 32
+  max_slices: 4
+  max_series: 3
+  val_fraction: 0.34
+  num_workers: 0
+
+model:
+  backbone: "resnet18"
+  pretrained: false
+  embedding_dim: 16
+  in_channels: 1
+  slice_attention:
+    enabled: true
+  metadata:
+    enabled: true
+    embedding_dim: 8
+  cross_series_attention:
+    enabled: true
+    num_heads: 2
+    num_layers: 1
+    dropout: 0.0
+  pathology_attention:
+    enabled: true
+    bottleneck_ratio: 2
+  report_weak_supervision:
+    enabled: true
+  distillation:
+    enabled: true
+    temperature: 2.0
+  text_encoder:
+    model_name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    freeze_backbone: true
+    max_length: 64
+
+loss:
+  weights:
+    bce: 1.0
+    report_weak: 0.2
+    distillation: 0.1
+
+train:
+  batch_size: 2
+  epochs: 2
+  mixed_precision: false
+  early_stopping_patience: 10

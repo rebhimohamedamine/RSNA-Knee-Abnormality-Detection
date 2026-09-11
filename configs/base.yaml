@@ -1,0 +1,101 @@
+# Base config: every model.*/loss.*/optim.*/train.* flag defaults OFF or to a
+# conservative value. Experiment configs set `_base_: base.yaml` and override
+# only what that experiment changes -- see README.md for the M1..M7 table.
+
+seed: 42
+device: "auto"          # "auto" | "cpu" | "cuda"
+
+paths:
+  train_csv: "data/train.csv"
+  train_series_csv: "data/train_series.csv"
+  test_csv: "data/test.csv"
+  test_series_csv: "data/test_series.csv"
+  sample_submission_csv: "data/sample_submission.csv"
+  dicom_root_train: "data/train_series"
+  dicom_root_test: "data/test_series"
+  cache_root: "cache"
+  checkpoint_root: "checkpoints"
+  output_root: "outputs"
+
+labels:
+  columns:
+    - "ACL"
+    - "MCL"
+    - "Medial Meniscus"
+    - "Lateral Meniscus"
+    - "Medial OA"
+    - "Lateral OA"
+    - "PF OA"
+    - "Effusion"
+    - "Synovitis"
+    - "Baker's"
+    - "Contusion"
+    - "Fracture"
+
+data:
+  image_size: 256
+  max_slices: 24
+  max_series: 6
+  clip_percentile: [0.5, 99.5]
+  normalize: "per_slice"           # per_slice | per_series | none
+  slice_sampling_strategy: "uniform_center"   # uniform | center | uniform_center
+  val_fraction: 0.2
+  split_seed: 42
+  num_workers: 2
+
+model:
+  backbone: "resnet18"
+  pretrained: false
+  embedding_dim: 128
+  in_channels: 1
+  slice_attention:
+    enabled: false
+  metadata:
+    enabled: false
+    embedding_dim: 16
+  cross_series_attention:
+    enabled: false
+    num_heads: 4
+    num_layers: 1
+    dropout: 0.1
+  study_pooling: "masked_mean"     # masked_mean | cls_token
+  pathology_attention:
+    enabled: false
+    bottleneck_ratio: 4
+  report_weak_supervision:
+    enabled: false
+  distillation:
+    enabled: false
+    temperature: 2.0
+  text_encoder:
+    model_name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    freeze_backbone: true
+    max_length: 256
+
+loss:
+  class_imbalance_strategy: "plain"   # plain | pos_weight | focal (exactly one active)
+  focal:
+    gamma: 2.0
+    alpha: 0.25
+  weights:
+    bce: 1.0
+    report_weak: 0.0
+    distillation: 0.0
+
+optim:
+  lr: 0.0003
+  weight_decay: 0.00001
+  backbone_lr_mult: 1.0
+  schedule: "cosine"                # cosine | none
+  warmup_steps: 100
+
+train:
+  batch_size: 4
+  epochs: 30
+  mixed_precision: true             # auto-disabled on CPU regardless of this flag
+  early_stopping_patience: 6
+  gradient_clip_norm: 1.0
+
+eval:
+  threshold: 0.5
+  calibration_bins: 10

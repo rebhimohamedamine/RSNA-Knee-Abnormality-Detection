@@ -1,0 +1,5 @@
+# M1 -- MRNet-style baseline: 2D CNN -> masked-mean slice pooling -> masked-mean
+# series pooling -> shared trunk read unchanged by all 12 heads. Every model.*
+# flag is inherited from base.yaml as disabled -- this file only names the run.
+_base_: base.yaml
+run_name: "m1_baseline"

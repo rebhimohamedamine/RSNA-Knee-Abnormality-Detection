@@ -1,0 +1,9 @@
+# M3 -- adds series metadata (plane / fluid-sensitive / fat-suppression) fused
+# into each series embedding, on top of M2's slice attention.
+_base_: base.yaml
+run_name: "m3_metadata"
+model:
+  slice_attention:
+    enabled: true
+  metadata:
+    enabled: true
